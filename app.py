@@ -1,102 +1,64 @@
-# app.py
-
 import streamlit as st
 import tensorflow as tf
 import numpy as np
-from PIL import Image
 import os
+from PIL import Image
 import requests
 import zipfile
 
-# Function to download and extract the model zip file from GitHub
+# GitHub URL for the model
+github_url = "https://github.com/hvamsiprakash/finalyearproject/raw/main/image_captioning_model.zip"
+
+# Function to download and extract the model
 def download_and_extract_model():
-    github_url = "https://github.com/hvamsiprakash/finalyearproject/raw/main/image_captioning_model.zip"
-    model_folder_name = "image_captioning_model"  # Name of the model folder
-
-    # Check if the model folder already exists
-    if os.path.exists(model_folder_name):
-        st.write("Model folder already exists. Skipping download.")
-        return
-
-    # Download the zip file
-    st.write("Downloading model from GitHub...")
-    response = requests.get(github_url)
-    with open("image_captioning_model.zip", "wb") as f:
-        f.write(response.content)
-
-    # Extract the zip file
-    st.write("Extracting model...")
-    with zipfile.ZipFile("image_captioning_model.zip", "r") as zip_ref:
-        zip_ref.extractall(".")
-
-    # Clean up: Remove the zip file after extraction
-    os.remove("image_captioning_model.zip")
-    st.write("Model downloaded and extracted successfully.")
-
-# Load the saved model
-@st.cache_resource  # Cache the model to avoid reloading on every interaction
-def load_model():
-    # Ensure the model folder is downloaded
     if not os.path.exists("image_captioning_model"):
-        download_and_extract_model()
+        # Download the model zip file
+        response = requests.get(github_url, stream=True)
+        with open("image_captioning_model.zip", "wb") as file:
+            for chunk in response.iter_content(chunk_size=128):
+                file.write(chunk)
 
-    # Load the model
-    model = tf.saved_model.load("image_captioning_model")
-    return model
+        # Extract the zip file
+        with zipfile.ZipFile("image_captioning_model.zip", "r") as zip_ref:
+            zip_ref.extractall()
 
-# Load the vocabulary and create INDEX_TO_WORD mapping
-@st.cache_data  # Cache the vocabulary to avoid reloading on every interaction
-def load_vocabulary():
-    # Assuming you saved the vectorization layer's vocabulary as a text file
-    with open("vocab.txt", "r") as f:
-        vocab = f.read().splitlines()
-    INDEX_TO_WORD = {idx: word for idx, word in enumerate(vocab)}
-    return INDEX_TO_WORD
+        # Remove the zip file after extraction
+        os.remove("image_captioning_model.zip")
 
-# Preprocess the image
-def preprocess_image(image):
-    image = image.resize((299, 299))  # Resize to match model input size
-    image = np.array(image) / 255.0  # Normalize pixel values
-    image = tf.expand_dims(image, axis=0)  # Add batch dimension
-    return image
+# Load the model
+def load_model():
+    return tf.saved_model.load("image_captioning_model")
 
-# Generate caption using the model
-def generate_caption(model, image, INDEX_TO_WORD, max_length=SEQ_LENGTH - 1):
-    # Pass the image through the CNN to get features
-    img_features = model.cnn_model(image, training=False)
+# Function to preprocess the image
+def preprocess_image(image_path):
+    img = tf.io.read_file(image_path)
+    img = tf.image.decode_jpeg(img, channels=3)
+    img = tf.image.resize(img, (299, 299))
+    img = tf.image.convert_image_dtype(img, tf.float32)
+    img = tf.expand_dims(img, axis=0)  # Add batch dimension
+    return img
 
-    # Encode the image features using the encoder
-    encoded_img = model.encoder(img_features, training=False)
+# Function to generate captions using the model
+def generate_caption(image, model):
+    # Preprocess the image
+    img_embed = model.cnn_model(image, training=False)
+    encoded_img = model.encoder(img_embed, training=False)
 
     # Initialize the decoded caption with the start token
     decoded_caption = "<start> "
-
-    # Loop to generate the caption word by word
-    for i in range(max_length):
-        # Tokenize the current decoded caption
+    for i in range(23):  # Maximum caption length
         tokenized_caption = vectorization([decoded_caption])[:, :-1]
-
-        # Create a mask to ignore padding tokens
         mask = tf.math.not_equal(tokenized_caption, 0)
-
-        # Generate predictions for the next token
         predictions = model.decoder(tokenized_caption, encoded_img, training=False, mask=mask)
-
-        # Select the token with the highest probability
         sampled_token_index = np.argmax(predictions[0, i, :])
         sampled_token = INDEX_TO_WORD[sampled_token_index]
-
-        # If the end token is generated, break the loop
         if sampled_token == "<end>":
             break
-
-        # Append the sampled token to the decoded caption
         decoded_caption += " " + sampled_token
 
-    # Remove the start token and trim any trailing spaces or end token
+    # Remove the start and end tokens
     decoded_caption = decoded_caption.replace("<start> ", "")
     decoded_caption = decoded_caption.replace(" <end>", "").strip()
-
     return decoded_caption
 
 # Streamlit app
@@ -104,26 +66,40 @@ def main():
     st.title("Image Captioning with Streamlit")
     st.write("Upload an image, and the model will generate a caption for it.")
 
-    # Load the model and vocabulary
+    # Download and extract the model
+    download_and_extract_model()
+
+    # Load the model
     model = load_model()
-    INDEX_TO_WORD = load_vocabulary()
 
-    # File uploader for the image
+    # Load the vocabulary and vectorization layer
+    global vectorization, INDEX_TO_WORD
+    vectorization = model.vectorization
+    vocab = vectorization.get_vocabulary()
+    INDEX_TO_WORD = {idx: word for idx, word in enumerate(vocab)}
+
+    # Upload image
     uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
-
     if uploaded_file is not None:
         # Display the uploaded image
         image = Image.open(uploaded_file)
         st.image(image, caption="Uploaded Image", use_column_width=True)
 
+        # Save the uploaded image temporarily
+        temp_image_path = "temp_image.jpg"
+        image.save(temp_image_path)
+
         # Preprocess the image
-        image = preprocess_image(image)
+        image_tensor = preprocess_image(temp_image_path)
 
         # Generate caption
         if st.button("Generate Caption"):
-            caption = generate_caption(model, image, INDEX_TO_WORD)
-            st.write("**Generated Caption:**")
+            caption = generate_caption(image_tensor, model)
+            st.write("Generated Caption:")
             st.success(caption)
+
+        # Remove the temporary image file
+        os.remove(temp_image_path)
 
 # Run the app
 if __name__ == "__main__":
