@@ -19,7 +19,9 @@ def download_and_extract_model(github_url, extract_to="image_captioning_model"):
 
 # Load the model
 def load_model_from_directory(model_dir="image_captioning_model"):
-    return tf.keras.models.load_model(model_dir)
+    # Load the model from the saved model directory
+    model = tf.saved_model.load(model_dir)
+    return model
 
 # Preprocess the image for model input (resize and normalize)
 def preprocess_image(image, target_size=(224, 224)):
@@ -30,8 +32,10 @@ def preprocess_image(image, target_size=(224, 224)):
 
 # Function to generate a caption (this will depend on your model)
 def predict_caption(model, preprocessed_image):
-    # Implement caption prediction logic based on your model
-    caption = "This is a placeholder caption"  # Replace with actual prediction logic
+    # Assuming the model has a function called "predict" (adjust based on the actual model)
+    # The model's signature and input/output function may vary, adjust accordingly
+    # Here we assume the model expects a tensor and returns a string caption.
+    caption = model(preprocessed_image)  # Replace this with actual prediction logic
     return caption
 
 # GitHub URL of the model ZIP
