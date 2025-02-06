@@ -6,7 +6,8 @@ import os
 import requests
 import zipfile
 import json
-from tensorflow.keras.layers import TextVectorization
+import re  # Import the re module
+from tensorflow.keras.layers import TextVectorization  # Correct import for TextVectorization
 
 # Function to download and unzip the model from GitHub
 def download_and_unzip_model():
@@ -97,7 +98,7 @@ st.write("Upload an image and the model will generate a caption for it.")
 uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
 if uploaded_file is not None:
     image = Image.open(uploaded_file)
-    st.image(image, caption='Uploaded Image.', use_column_width=True)
+    st.image(image, caption='Uploaded Image.', use_container_width=True)  # Updated to use_container_width
     st.write("")
     st.write("Generating caption...")
     caption = generate_caption(image)
