@@ -8,7 +8,7 @@ import zipfile
 
 # Function to download and unzip the model from GitHub
 def download_and_unzip_model():
-    model_url = "https://github.com/your-username/your-repo-name/raw/main/image_captioning_model.zip"
+    model_url = "https://github.com/hvamsiprakash/finalyearproject/raw/main/image_captioning_model.zip"
     model_zip_path = "image_captioning_model.zip"
     model_dir = "image_captioning_model"
 
