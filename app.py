@@ -28,17 +28,29 @@ def download_and_unzip_model():
         st.write("Unzip complete.")
 
 # Load the model and vectorization layer
-@st.cache(allow_output_mutation=True)
+@st.cache_resource  # Use st.cache_resource for loading models
 def load_model():
     download_and_unzip_model()  # Download and unzip the model
     model = tf.saved_model.load("image_captioning_model")
     return model
 
-@st.cache(allow_output_mutation=True)
+
+# Function to load the vocabulary
+@st.cache_resource  # Use st.cache_resource for caching the loaded vocabulary
 def load_vectorization():
-    vectorization = TextVectorization(max_tokens=13000, output_sequence_length=24)
-    # Adapt the vectorization layer with your vocabulary
-    # vectorization.adapt(your_vocabulary)
+    # Load the vocabulary from the JSON file
+    with open('vocab.json', 'r') as f:
+        vocab = json.load(f)
+
+    # Initialize the TextVectorization layer
+    vectorization = TextVectorization(
+        max_tokens=13000,
+        output_sequence_length=24,
+        standardize=custom_standardization
+    )
+
+    # Set the vocabulary
+    vectorization.set_vocabulary(vocab)
     return vectorization
 
 model = load_model()
