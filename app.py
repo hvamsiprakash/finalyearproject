@@ -1,64 +1,85 @@
 import streamlit as st
-import zipfile
+import tensorflow as tf
+import numpy as np
+from PIL import Image
 import os
 import requests
-import tensorflow as tf
-from PIL import Image
-import numpy as np
+import zipfile
 
-# Function to download and extract the model ZIP
-def download_and_extract_model(github_url, extract_to="image_captioning_model"):
-    # Download the ZIP file
-    response = requests.get(github_url)
-    with open("image_captioning_model.zip", "wb") as f:
-        f.write(response.content)
+# Function to download and unzip the model from GitHub
+def download_and_unzip_model():
+    model_url = "https://github.com/your-username/your-repo-name/raw/main/image_captioning_model.zip"
+    model_zip_path = "image_captioning_model.zip"
+    model_dir = "image_captioning_model"
 
-    # Extract the ZIP file
-    with zipfile.ZipFile("image_captioning_model.zip", 'r') as zip_ref:
-        zip_ref.extractall(extract_to)
+    # Download the zip file
+    if not os.path.exists(model_zip_path):
+        st.write("Downloading model...")
+        response = requests.get(model_url)
+        with open(model_zip_path, "wb") as f:
+            f.write(response.content)
+        st.write("Download complete.")
 
-# Load the model
-def load_model_from_directory(model_dir="image_captioning_model"):
-    # Load the model from the saved model directory
-    model = tf.saved_model.load(model_dir)
+    # Unzip the model
+    if not os.path.exists(model_dir):
+        st.write("Unzipping model...")
+        with zipfile.ZipFile(model_zip_path, "r") as zip_ref:
+            zip_ref.extractall(model_dir)
+        st.write("Unzip complete.")
+
+# Load the model and vectorization layer
+@st.cache(allow_output_mutation=True)
+def load_model():
+    download_and_unzip_model()  # Download and unzip the model
+    model = tf.saved_model.load("image_captioning_model")
     return model
 
-# Preprocess the image for model input (resize and normalize)
-def preprocess_image(image, target_size=(224, 224)):
-    image = image.resize(target_size)  # Resize image to match the model's expected input size
-    image = np.array(image) / 255.0  # Normalize the image
-    image = np.expand_dims(image, axis=0)  # Add batch dimension
+@st.cache(allow_output_mutation=True)
+def load_vectorization():
+    vectorization = TextVectorization(max_tokens=13000, output_sequence_length=24)
+    # Adapt the vectorization layer with your vocabulary
+    # vectorization.adapt(your_vocabulary)
+    return vectorization
+
+model = load_model()
+vectorization = load_vectorization()
+
+# Function to preprocess the image
+def preprocess_image(image):
+    image = image.resize((299, 299))
+    image = np.array(image)
+    image = tf.image.convert_image_dtype(image, tf.float32)
+    image = tf.expand_dims(image, 0)
     return image
 
-# Function to generate a caption (this will depend on your model)
-def predict_caption(model, preprocessed_image):
-    # Assuming the model has a function called "predict" (adjust based on the actual model)
-    # The model's signature and input/output function may vary, adjust accordingly
-    # Here we assume the model expects a tensor and returns a string caption.
-    caption = model(preprocessed_image)  # Replace this with actual prediction logic
-    return caption
+# Function to generate caption
+def generate_caption(image):
+    image = preprocess_image(image)
+    img_embed = model.cnn_model(image)
+    encoded_img = model.encoder(img_embed, training=False)
+    decoded_caption = "<start> "
+    for i in range(23):  # SEQ_LENGTH - 1
+        tokenized_caption = vectorization([decoded_caption])[:, :-1]
+        mask = tf.math.not_equal(tokenized_caption, 0)
+        predictions = model.decoder(tokenized_caption, encoded_img, training=False, mask=mask)
+        sampled_token_index = np.argmax(predictions[0, i, :])
+        sampled_token = vectorization.get_vocabulary()[sampled_token_index]
+        if sampled_token == "<end>":
+            break
+        decoded_caption += " " + sampled_token
+    decoded_caption = decoded_caption.replace("<start> ", "")
+    decoded_caption = decoded_caption.replace(" <end>", "").strip()
+    return decoded_caption
 
-# GitHub URL of the model ZIP
-github_url = "https://github.com/hvamsiprakash/finalyearproject/raw/main/image_captioning_model.zip"
+# Streamlit app
+st.title("Image Captioning App")
+st.write("Upload an image and the model will generate a caption for it.")
 
-# Download and extract model
-download_and_extract_model(github_url)
-
-# Load the model
-model = load_model_from_directory()
-
-# Now you can use the model for predictions in your Streamlit app
-st.title("Image Captioning")
-
-uploaded_image = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
-
-if uploaded_image:
-    image = Image.open(uploaded_image)
-    st.image(image, caption="Uploaded Image.", use_column_width=True)
-    
-    # Preprocess the image as needed (resize, normalize, etc.)
-    preprocessed_image = preprocess_image(image)
-    
-    # Predict the caption for the image
-    caption = predict_caption(model, preprocessed_image)
-    st.write("Predicted Caption: ", caption)
+uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+if uploaded_file is not None:
+    image = Image.open(uploaded_file)
+    st.image(image, caption='Uploaded Image.', use_column_width=True)
+    st.write("")
+    st.write("Generating caption...")
+    caption = generate_caption(image)
+    st.write(f"**Generated Caption:** {caption}")
