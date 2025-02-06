@@ -5,6 +5,8 @@ from PIL import Image
 import os
 import requests
 import zipfile
+import json
+from tensorflow.keras.layers import TextVectorization
 
 # Function to download and unzip the model from GitHub
 def download_and_unzip_model():
@@ -34,6 +36,11 @@ def load_model():
     model = tf.saved_model.load("image_captioning_model")
     return model
 
+# Custom standardization function
+def custom_standardization(input_string):
+    lowercase = tf.strings.lower(input_string)
+    strip_chars = "!\"#$%&'()*+,-./:;=?@[\]^_`{|}~1234567890"
+    return tf.strings.regex_replace(lowercase, "[%s]" % re.escape(strip_chars), "")
 
 # Function to load the vocabulary
 @st.cache_resource  # Use st.cache_resource for caching the loaded vocabulary
